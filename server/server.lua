@@ -1,3 +1,4 @@
+---@diagnostic disable: missing-parameter
 RegisterNetEvent('luke_garages:ThrowError', function(text)
     error(text)
 end)
@@ -149,14 +150,23 @@ RegisterNetEvent('luke_garages:ChangeStored', function(plate)
 end)
 
 RegisterNetEvent('luke_garages:SaveVehicle', function(vehicle, plate, ent, garage)
-    MySQL.Async.execute('UPDATE `owned_vehicles` SET `vehicle` = @vehicle, `garage` = @garage, `last_garage` = @garage, `stored` = @stored WHERE `plate` = @plate', {
-        ['@vehicle'] = json.encode(vehicle),
-        ['@plate'] = ESX.Math.Trim(plate),
-        ['@stored'] = 1,
-        ['@garage'] = garage
-    })
-    local ent = NetworkGetEntityFromNetworkId(ent)
-    DeleteEntity(ent)
+    local player = ESX.GetPlayerFromId(source)
+    local metadata = {description = 'Klíče od auta: '..ESX.Math.Trim(plate)}
+    local item = exports.ox_inventory:GetItem(player.source, 'klickyodauta', metadata, true)
+
+    if item ~= nil and item >= 1 then
+        MySQL.Async.execute('UPDATE `owned_vehicles` SET `vehicle` = @vehicle, `garage` = @garage, `last_garage` = @garage, `stored` = @stored WHERE `plate` = @plate', {
+            ['@vehicle'] = json.encode(vehicle),
+            ['@plate'] = ESX.Math.Trim(plate),
+            ['@stored'] = 1,
+            ['@garage'] = garage
+        })
+        local ent = NetworkGetEntityFromNetworkId(ent)
+        DeleteEntity(ent)
+        exports.ox_inventory:RemoveItem(player.source, 'klickyodauta', item, metadata)
+    else
+        TriggerClientEvent('ox_lib:notify', player.source, {type = 'error', title = 'Nemáš u sebe klíče od vozidla'})
+    end
 end)
 
 
@@ -183,6 +193,54 @@ local function canAfford(src, price)
     end
 end
 
+-- RegisterNetEvent('luke_garages:SpawnVehicle', function(model, plate, coords, heading, price)
+--     if type(model) == 'string' then model = GetHashKey(model) end
+--     local xPlayer = ESX.GetPlayerFromId(source)
+--     local vehicles = GetAllVehicles()
+--     plate = ESX.Math.Trim(plate)
+--     if price and not canAfford(source, price) then return end
+--     for i = 1, #vehicles do
+--         if ESX.Math.Trim(GetVehicleNumberPlateText(vehicles[i])) == plate then
+--             if GetVehiclePetrolTankHealth(vehicle) > 0 and GetVehicleBodyHealth(vehicle) > 0 then
+--             return xPlayer.showNotification(Locale('vehicle_already_exists')) end
+--         end
+--     end
+--     MySQL.Async.fetchAll('SELECT owner, vehicle, plate, garage, stored FROM `owned_vehicles` WHERE plate = @plate', {['@plate'] = ESX.Math.Trim(plate)}, function(result)
+--         if result[1] then
+--             CreateThread(function()
+--                 if result[1] then
+--                     local entity = Citizen.InvokeNative(`CREATE_AUTOMOBILE`, model, coords.x, coords.y, coords.z, heading)
+--                     local ped = GetPedInVehicleSeat(entity, -1)
+--                     if ped > 0 then
+--                         for i = -1, 6 do
+--                             ped = GetPedInVehicleSeat(entity, i)
+--                             local popType = GetEntityPopulationType(ped)
+--                             if popType <= 5 or popType >= 1 then
+--                                 DeleteEntity(ped)
+--                             end
+--                         end
+--                     end
+--                     if Config.TeleportToVehicle then
+--                         local playerPed = GetPlayerPed(xPlayer.source)
+--                         local timer = GetGameTimer()
+--                         while GetVehiclePedIsIn(playerPed) ~= entity do
+--                             Wait(0)
+--                             SetPedIntoVehicle(playerPed, entity, -1)
+--                             if timer - GetGameTimer() > 15000 then
+--                                 break
+--                             end
+--                         end
+--                     end
+--                     local metadata = {description = 'Klíče od auta: '..ESX.Math.Trim(plate)}
+--                     exports.ox_inventory:AddItem(xPlayer.source, 'klickyodauta', 1, metadata)
+--                     local ent = Entity(entity)
+--                     ent.state.vehicleData = result[1]
+--                 end
+--             end)
+--         end
+--     end)
+-- end)
+
 RegisterNetEvent('luke_garages:SpawnVehicle', function(model, plate, coords, heading, price)
     if type(model) == 'string' then model = GetHashKey(model) end
     local xPlayer = ESX.GetPlayerFromId(source)
@@ -195,34 +253,10 @@ RegisterNetEvent('luke_garages:SpawnVehicle', function(model, plate, coords, hea
             return xPlayer.showNotification(Locale('vehicle_already_exists')) end
         end
     end
-    MySQL.Async.fetchAll('SELECT vehicle, plate, garage FROM `owned_vehicles` WHERE plate = @plate', {['@plate'] = ESX.Math.Trim(plate)}, function(result)
+    MySQL.Async.fetchAll('SELECT owner, vehicle, plate, garage, stored FROM `owned_vehicles` WHERE plate = @plate', {['@plate'] = ESX.Math.Trim(plate)}, function(result)
         if result[1] then
-            CreateThread(function()
-                local entity = Citizen.InvokeNative(`CREATE_AUTOMOBILE`, model, coords.x, coords.y, coords.z, heading)
-                local ped = GetPedInVehicleSeat(entity, -1)
-                if ped > 0 then
-                    for i = -1, 6 do
-                        ped = GetPedInVehicleSeat(entity, i)
-                        local popType = GetEntityPopulationType(ped)
-                        if popType <= 5 or popType >= 1 then
-                            DeleteEntity(ped)
-                        end
-                    end
-                end
-                if Config.TeleportToVehicle then
-                    local playerPed = GetPlayerPed(xPlayer.source)
-                    local timer = GetGameTimer()
-                    while GetVehiclePedIsIn(playerPed) ~= entity do
-                        Wait(0)
-                        SetPedIntoVehicle(playerPed, entity, -1)
-                        if timer - GetGameTimer() > 15000 then
-                            break
-                        end
-                    end
-                end
-                local ent = Entity(entity)
-                ent.state.vehicleData = result[1]
-            end)
+            local metadata = {description = 'Klíče od auta: '..ESX.Math.Trim(plate)}
+            exports.ox_inventory:AddItem(xPlayer.source, 'klickyodauta', 1, metadata)
         end
     end)
 end)
