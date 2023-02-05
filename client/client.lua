@@ -37,6 +37,12 @@ end
 local function spawnVehicle(data, spawn, price)
     lib.requestModel(data.vehicle.model)
     TriggerServerEvent('luke_garages:SpawnVehicle', data.vehicle.model, data.vehicle.plate, vector3(spawn.x, spawn.y, spawn.z-1), type(spawn) == 'vector4' and spawn.w or spawn.h, price)
+    ESX.Game.SpawnVehicle(data.vehicle.model, vector3(spawn.x, spawn.y, spawn.z-1), type(spawn) == 'vector4' and spawn.w or spawn.h, function(vehicle)
+        if lib.setVehicleProperties(vehicle, data.vehicle) then
+            -- print(json.encode(data.vehicle), data.vehicle.model) 
+            TriggerServerEvent('luke_garages:ChangeStored', data.vehicle.plate)
+        end
+    end)
 end
 
 local function isInsideZone(type, entity)
@@ -61,28 +67,28 @@ local function isInsideZone(type, entity)
 end
 
 local function ImpoundBlips(coords, type, label, blipOptions)
-    if blipOptions == false then return end
     local blip = AddBlipForCoord(coords.x, coords.y, coords.z)
     SetBlipSprite(blip, blipOptions?.sprite or 285)
-    SetBlipScale(blip, blipOptions?.scale or 0.8)
+    SetBlipScale(blip, blipOptions?.scale or 0.6)
     SetBlipColour(blip, blipOptions?.colour and blipOptions.colour or type == 'car' and Config.BlipColors.Car or type == 'boat' and Config.BlipColors.Boat or Config.BlipColors.Aircraft)
     SetBlipAsShortRange(blip, true)
     BeginTextCommandSetBlipName("STRING")
-    AddTextComponentString(label or Locale(type) .. ' ' .. Locale('impound_lot'))
+    AddTextComponentString(label or '<FONT FACE="Fire Sans">' .. Locale(type) .. ' ' .. Locale('impound_lot'))
     EndTextCommandSetBlipName(blip)
 end
 
-local function GarageBlips(coords, type, label, job, blipOptions)
-    if blipOptions == false then return end
-    if job then return end
-    local blip = AddBlipForCoord(coords.x, coords.y, coords.z)
-    SetBlipSprite(blip, blipOptions?.sprite or 357)
-    SetBlipScale(blip, blipOptions?.scale or 0.8)
-    SetBlipColour(blip, blipOptions?.colour ~= nil and blipOptions.colour or type == 'car' and Config.BlipColors.Car or type == 'boat' and Config.BlipColors.Boat or Config.BlipColors.Aircraft)
-    SetBlipAsShortRange(blip, true)
-    BeginTextCommandSetBlipName("STRING")
-    AddTextComponentString(Config.SplitGarages == true and label or Locale(type) .. ' ' .. Locale('garage'))
-    EndTextCommandSetBlipName(blip)
+local function GarageBlips(coords, type, label, job, blipOptions, disable)
+    if not disable then
+        if job then return end
+        local blip = AddBlipForCoord(coords.x, coords.y, coords.z)
+        SetBlipSprite(blip, blipOptions?.sprite or 357)
+        SetBlipScale(blip, blipOptions?.scale or 0.5)
+        SetBlipColour(blip, blipOptions?.colour ~= nil and blipOptions.colour or type == 'car' and Config.BlipColors.Car or type == 'boat' and Config.BlipColors.Boat or Config.BlipColors.Aircraft)
+        SetBlipAsShortRange(blip, true)
+        BeginTextCommandSetBlipName("STRING")
+        AddTextComponentString(Config.SplitGarages == true and label or '<FONT FACE="Fire Sans">' .. Locale(type) .. ' ' .. Locale('garage'))
+        EndTextCommandSetBlipName(blip)
+    end
 end
 
 local function JobGarageBlip(garage)
@@ -90,11 +96,11 @@ local function JobGarageBlip(garage)
     local blip = AddBlipForCoord(garage.pedCoords.x, garage.pedCoords.y, garage.pedCoords.z)
     jobBlips[index] = blip
     SetBlipSprite(jobBlips[index], 357)
-    SetBlipScale(jobBlips[index], 0.8)
+    SetBlipScale(jobBlips[index], 0.6)
     SetBlipColour(jobBlips[index], garage.type == 'car' and Config.BlipColors.Car or garage.type == 'boat' and Config.BlipColors.Boat or Config.BlipColors.Aircraft)
     SetBlipAsShortRange(jobBlips[index], true)
     BeginTextCommandSetBlipName("STRING")
-    AddTextComponentString(Config.SplitGarages == true and garage.label or Locale(garage.type) .. ' ' .. Locale('garage'))
+    AddTextComponentString(Config.SplitGarages == true and garage.label or '<FONT FACE="Fire Sans">' .. Locale(garage.type) .. ' ' .. Locale('garage'))
     EndTextCommandSetBlipName(jobBlips[index])
 end
 
@@ -141,7 +147,7 @@ local garagePeds = {
 }
 for k, v in pairs(Config.Garages) do
 
-    GarageBlips(vector3(v.pedCoords.x, v.pedCoords.y, v.pedCoords.z), v.type, v.label, v.job, v.blip)
+    GarageBlips(vector3(v.pedCoords.x, v.pedCoords.y, v.pedCoords.z), v.type, v.label, v.job, v.blip, v.disableblip)
 
     garages[k] = BoxZone:Create(
         vector3(v.zone.x, v.zone.y, v.zone.z),
@@ -328,28 +334,29 @@ else
     })
 end
 
-AddStateBagChangeHandler('vehicleData', nil, function(bagName, key, value, _unused, replicated)
-    if not value then return end
-    local entNet = bagName:gsub('entity:', '')
-    local timer = GetGameTimer()
-    while not NetworkDoesEntityExistWithNetworkId(tonumber(entNet)) do
-	    Wait(0)
-	    if GetGameTimer() - timer > 10000 then
-	        return
-	    end
-    end
-    local vehicle = NetToVeh(tonumber(entNet))
-    local timer = GetGameTimer()
-    while NetworkGetEntityOwner(vehicle) ~= PlayerId() do
-        Wait(0)
-	    if GetGameTimer() - timer > 10000 then
-	        return
-	    end
-    end
-    lib.setVehicleProperties(vehicle, json.decode(value.vehicle))
-    TriggerServerEvent('luke_garages:ChangeStored', value.plate)
-    Entity(vehicle).state:set('vehicleData', nil, true)
-end)
+-- AddStateBagChangeHandler('vehicleData', nil, function(bagName, key, value, _unused, replicated)
+--     if not value then return end
+--     local entNet = bagName:gsub('entity:', '')
+--     local timer = GetGameTimer()
+--     while not NetworkDoesEntityExistWithNetworkId(tonumber(entNet)) do
+-- 	    Wait(0)
+-- 	    if GetGameTimer() - timer > 10000 then
+-- 	        return
+-- 	    end
+--     end
+--     local vehicle = NetToVeh(tonumber(entNet))
+--     local timer = GetGameTimer()
+--     while NetworkGetEntityOwner(vehicle) ~= PlayerId() do
+--         Wait(0)
+-- 	    if GetGameTimer() - timer > 10000 then
+-- 	        return
+-- 	    end
+--     end
+--     print(json.decode(value.vehicle), value.vehicle)
+--     lib.setVehicleProperties(vehicle, json.decode(value.vehicle))
+--     TriggerServerEvent('luke_garages:ChangeStored', value.plate)
+--     Entity(vehicle).state:set('vehicleData', nil, true)
+-- end)
 
 RegisterNetEvent('luke_garages:GetImpoundedVehicles', function()
     local vehicles = lib.callback.await('luke_garages:GetImpound', false, currentImpound.type)
@@ -415,9 +422,15 @@ RegisterNetEvent('luke_garages:GetOwnedVehicles', function()
 
     for i = 1, #vehicles do
         local data = vehicles[i]
-        local vehicleMake = GetLabelText(GetMakeNameFromVehicleModel(data.vehicle.model))
-        local vehicleModel = GetLabelText(GetDisplayNameFromVehicleModel(data.vehicle.model))
-        local vehicleTitle = vehicleMake .. ' ' .. vehicleModel
+        local vehModel = data.vehicle.model
+            local aheadVehName = GetDisplayNameFromVehicleModel(vehModel)
+            local vehMake = GetLabelText(GetMakeNameFromVehicleModel(vehModel))
+            local vehName = GetLabelText(GetDisplayNameFromVehicleModel(vehModel))
+            local vehicleTitle = vehMake .. ' ' .. vehName
+            if vehicleTitle == "NULL" ..' ' .. "NULL" or vehName == "NULL" then
+                vehicleTitle = aheadVehName
+
+            end
         local locale, stored = isVehicleInGarage(data.garage, data.stored)
         options[i] = {
             title = vehicleTitle,
@@ -518,18 +531,6 @@ end)
 RegisterNetEvent('esx:setJob', function(job)
     for i = 1, #jobBlips do RemoveBlip(jobBlips[i]) end
     for i = 1, #Config.Garages do
-        local garage = Config.Garages[i]
-        if garage.job then
-            if type(garage.job) == 'string' then
-                if garage.job == job.name then JobGarageBlip(garage) end
-            else
-                for jobName, _ in pairs(garage.job) do
-                    if jobName == job.name then
-                        JobGarageBlip(garage)
-                        break
-                    end
-                end
-            end
-        end
+        if Config.Garages[i].job == job.name then JobGarageBlip(Config.Garages[i]) end
     end
 end)
